@@ -1,0 +1,4 @@
+vision_bundle.js is distributed from @mediapipe/tasks-vision 1.2.2.
+Copyright Google LLC. Licensed under the Apache License, Version 2.0.
+https://www.apache.org/licenses/LICENSE-2.0
+Source: https://github.com/google-ai-edge/mediapipe
