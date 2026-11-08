@@ -56,3 +56,17 @@ test('Neon expires abandoned guests and rejects expired rooms',{skip:!enabled},a
     await assert.rejects(()=>pollRoom(host.id,host.token,0),RoomError);
   }finally{await sql.query('DELETE FROM lovebooth_signaling_rooms WHERE id=$1',[host.id]);}
 });
+test('guest resumes without taking a third place; stale leave cannot evict resumed guest',{skip:!enabled},async()=>{
+  const host=await createRoom(`test-${randomUUID()}`),sql=database();
+  try{
+    const first=await joinRoom(host.id),resumed=await joinRoom(host.id,first.token);
+    assert.notEqual(first.token,resumed.token);
+    await roomAction(host.id,first.token,'leave',null);
+    assert.equal((await pollRoom(host.id,resumed.token,resumed.cursor)).closed,false);
+    await assert.rejects(()=>joinRoom(host.id),/Both places/);
+    await sql.query('UPDATE lovebooth_signaling_rooms SET guest_seen_ms=$2 WHERE id=$1',[host.id,Date.now()-61000]);
+    await joinRoom(host.id); // Reclaim without waiting for a host poll.
+    await sql.query('UPDATE lovebooth_signaling_rooms SET closed=true WHERE id=$1',[host.id]);
+    await assert.rejects(()=>joinRoom(host.id),(error:unknown)=>error instanceof RoomError && error.status===410);
+  }finally{await sql.query('DELETE FROM lovebooth_signaling_rooms WHERE id=$1',[host.id]);}
+});

@@ -14,6 +14,7 @@ export class HttpSignaling implements SignalingConnection {
   private controller=new AbortController();
   private writes:Promise<unknown>=Promise.resolve();
   private failures=0;
+  private fastUntil=Date.now()+30000;
   constructor(){queueMicrotask(()=>{if(!this.stopped)this.fire('connect');});}
   on(event:string,callback:(...args:any[])=>void){this.listeners.set(event,[...(this.listeners.get(event)||[]),callback]);return this;}
   private fire(event:string,...args:unknown[]){for(const callback of this.listeners.get(event)||[])callback(...args);}
@@ -28,12 +29,16 @@ export class HttpSignaling implements SignalingConnection {
   timeout(milliseconds:number){return {emitWithAck:async(event:string)=>{if(event!=='clock')throw new Error('Unknown request.');return (await this.request('/api/rooms',{action:'clock'},milliseconds)).time;}};}
   emit(event:string,...args:any[]){
     if(this.stopped)return this;
+    if(event==='signal')this.fastUntil=Date.now()+15000;
     const callback=typeof args.at(-1)==='function'?args.pop():undefined;
     this.writes=this.writes.then(async()=>{
       if(this.stopped)return;
       try{
         if(event==='create' || event==='join'){
-          const result=await this.request('/api/rooms',{action:event,...(event==='join'?{room:args[0]}:{})});
+          let resumeToken:string|null=null;
+          if(event==='join'){try{resumeToken=sessionStorage.getItem(`lovebooth-room:${args[0]}`);}catch{}}
+          const result=await this.request('/api/rooms',{action:event,...(event==='join'?{room:args[0],resumeToken}: {})});
+          if(result.role==='guest'){try{sessionStorage.setItem(`lovebooth-room:${result.id}`,result.token);}catch{}}
           if(this.stopped){void this.release(result);return;}
           this.session={id:result.id,token:result.token,cursor:result.cursor};callback?.({id:result.id});this.schedule(0);
         }else{
@@ -55,10 +60,11 @@ export class HttpSignaling implements SignalingConnection {
       const result=await this.request(`/api/rooms/${session.id}?after=${session.cursor}`);
       if(this.stopped || session!==this.session)return;
       this.failures=0;
-      for(const event of result.events as Event[]){if(event.id>session.cursor)this.fire(event.event,event.data);if(this.stopped)return;}
+      for(const event of result.events as Event[]){if(event.event==='partner-ready' || event.event==='signal')this.fastUntil=Date.now()+15000;if(event.id>session.cursor)this.fire(event.event,event.data);if(this.stopped)return;}
       session.cursor=result.cursor;
       if(result.closed){this.fire('closed','This private room has ended. Create a new invitation.');this.disconnect();return;}
-      this.schedule(document.hidden?10000:1000);
+      const negotiating=Date.now()<this.fastUntil;
+      this.schedule(document.hidden?5000:negotiating?150:1000);
     }catch{
       if(this.stopped)return;
       this.failures++;

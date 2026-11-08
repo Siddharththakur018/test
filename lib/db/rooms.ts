@@ -27,14 +27,21 @@ export async function createRoom(ip:string){
   ]);
   return {id,token,role:'host',cursor:0};
 }
-export async function joinRoom(id:string){
+export async function joinRoom(id:string,resumeToken?:string){
   if(!roomPattern.test(id))throw new RoomError('That invitation is not valid.');
   const sql=database(),now=Date.now(),token=secret();
+  const resume=resumeToken && tokenPattern.test(resumeToken)?hash(resumeToken):'';
+  // Rotate credentials on resume so an old tab cannot release the new session.
   // The conditional UPDATE locks the row: simultaneous guests cannot claim the same place.
   const rows=await sql.query(`UPDATE lovebooth_signaling_rooms SET guest_token=$2,guest_seen_ms=$3,revision=revision+1,
     events=${emit('host_token',"'partner-ready'","'null'::jsonb")}
-    WHERE id=$1 AND NOT closed AND expires_ms>$3 AND host_seen_ms>$3-60000 AND guest_token IS NULL RETURNING revision`,[id,hash(token),now]);
-  if(!rows.length)throw new RoomError('This room is full or has expired. Ask your partner for a fresh invitation.',409);
+    WHERE id=$1 AND NOT closed AND expires_ms>$3 AND host_seen_ms>$3-300000 AND (guest_token IS NULL OR guest_seen_ms<$3-60000 OR guest_token=$4) RETURNING revision`,[id,hash(token),now,resume]);
+  if(!rows.length){
+    const state=await sql.query('SELECT closed,expires_ms,host_seen_ms FROM lovebooth_signaling_rooms WHERE id=$1',[id]);
+    if(!state.length || state[0].closed || Number(state[0].expires_ms)<=now)throw new RoomError('This invitation has ended. Ask the host to create a new room and share its new link.',410);
+    if(Number(state[0].host_seen_ms)<=now-300000)throw new RoomError('The host is offline. Ask them to reopen the booth and try joining again.',409);
+    throw new RoomError('Both places are occupied. Leave the room on the other guest device before joining here.',409);
+  }
   return {id,token,role:'guest',cursor:Number(rows[0].revision)};
 }
 export async function pollRoom(id:string,token:string,after:number){
@@ -42,11 +49,11 @@ export async function pollRoom(id:string,token:string,after:number){
   if(!Number.isSafeInteger(after) || after<0)throw new RoomError('Invalid event cursor.');
   // A suspended/closed tab must not reserve the second place indefinitely.
   await sql.query(`UPDATE lovebooth_signaling_rooms SET
-    closed=CASE WHEN host_seen_ms<$3-60000 THEN true ELSE closed END,
+    closed=CASE WHEN host_seen_ms<$3-300000 THEN true ELSE closed END,
     guest_token=CASE WHEN guest_seen_ms<$3-60000 THEN NULL ELSE guest_token END,
-    revision=revision+1,events=${emit("CASE WHEN host_seen_ms<$3-60000 THEN 'all' ELSE host_token END","CASE WHEN host_seen_ms<$3-60000 THEN 'closed' ELSE 'partner-left' END","CASE WHEN host_seen_ms<$3-60000 THEN to_jsonb('Your partner disconnected. Create a new invitation.'::text) ELSE 'null'::jsonb END")}
+    revision=revision+1,events=${emit("CASE WHEN host_seen_ms<$3-300000 THEN 'all' ELSE host_token END","CASE WHEN host_seen_ms<$3-300000 THEN 'closed' ELSE 'partner-left' END","CASE WHEN host_seen_ms<$3-300000 THEN to_jsonb('Your partner disconnected. Create a new invitation.'::text) ELSE 'null'::jsonb END")}
     WHERE id=$1 AND (host_token=$2 OR guest_token=$2) AND NOT closed AND expires_ms>$3
-      AND (host_seen_ms<$3-60000 OR (guest_token IS NOT NULL AND guest_seen_ms<$3-60000))`,[id,member,now]);
+      AND (host_seen_ms<$3-300000 OR (guest_token IS NOT NULL AND guest_seen_ms<$3-60000))`,[id,member,now]);
   const rows=await sql.query(`UPDATE lovebooth_signaling_rooms SET
     host_seen_ms=CASE WHEN host_token=$2 THEN $3 ELSE host_seen_ms END,
     guest_seen_ms=CASE WHEN guest_token=$2 THEN $3 ELSE guest_seen_ms END

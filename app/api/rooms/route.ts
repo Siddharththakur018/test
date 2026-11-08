@@ -10,7 +10,7 @@ export async function POST(request:Request){
       const ip=(request.headers.get('x-vercel-forwarded-for') || request.headers.get('x-forwarded-for') || 'local').split(',')[0].trim();
       return json(await createRoom(ip));
     }
-    if(input.action==='join' && typeof input.room==='string')return json(await joinRoom(input.room));
+    if(input.action==='join' && typeof input.room==='string')return json(await joinRoom(input.room,typeof input.resumeToken==='string'?input.resumeToken:undefined));
     throw new RoomError('Unknown room action.');
   }catch(error){return failure(error);}
 }

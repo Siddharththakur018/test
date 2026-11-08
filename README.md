@@ -92,3 +92,11 @@ Rooms expire after one hour. Opaque per-member credentials are hashed in the dat
 ## Optional persistent Socket.IO service
 
 For a continuously connected Socket.IO transport, the included `render.yaml` defines a single-instance Node service. Another Node host can run `npm ci --omit=dev` followed by `npm run start:signaling` on Node 22.18+. Set its `ALLOWED_ORIGINS` to exact website origins, comma-separated. Set the Vercel website's `SIGNALING_SERVER_URL` to the deployed HTTPS service origin and redeploy. An explicit service URL takes priority over the Neon-backed transport. Without either setting, local `npm run dev` / `npm start` use the original combined custom server. Do not horizontally scale the in-memory Socket.IO service without shared state. TURN configuration remains necessary for reliable camera connections across different networks with either transport.
+
+## Camera connection recovery
+
+Incoming WebRTC negotiation messages are processed in order, and early ICE candidates are preserved until the remote session description is ready. Outgoing local ICE waits behind its offer/answer. Clock samples run in parallel. Room polling accelerates to 150 ms during negotiation, then returns to its normal cadence. `vercel.json` places API functions in Singapore (`sin1`) near the configured Neon database. A camera connection times out after 20 seconds instead of leaving an indefinite spinner.
+
+Guest sessions can resume using a per-tab session credential. Resume rotates the credential so an older tab cannot evict its replacement. Stale guest places can be reclaimed atomically after one minute; hosts have a five-minute inactivity allowance for mobile sharing. Expired/closed invitations now return 410 and occupied places return a specific 409 message.
+
+A successful room join is not proof that the cameras can establish a media connection. Neon exchanges connection metadata; it does not relay video. Some mobile and restricted networks require a real TURN service configured through the existing TURN environment variables. Without that relay, those network combinations can still fail even when signaling is fast and correct.
