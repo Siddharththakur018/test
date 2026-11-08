@@ -1,0 +1,17 @@
+# One process owns the ephemeral rooms. Do not scale horizontally without a shared store.
+services:
+  - type: web
+    name: lovebooth-signaling
+    runtime: node
+    plan: starter
+    buildCommand: npm ci --omit=dev
+    startCommand: npm run start:signaling
+    healthCheckPath: /health
+    numInstances: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22.22.0
+      - key: ALLOWED_ORIGINS
+        sync: false

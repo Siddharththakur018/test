@@ -34,7 +34,9 @@
     "tests/**/*.ts",
     "server.ts",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    "signaling-server.ts",
+    "scripts/**/*.ts"
   ],
   "exclude": [
     "node_modules",

@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Open the URL printed in the terminal (normally http://localhost:3000; if occupied, the next available port is used). For production: `npm run build` then `npm start`. The custom Node server serves both Next.js and Socket.IO. Deploy to a Node container or VM that supports persistent WebSockets. Do not deploy the server to a static host or a request-only serverless function. Set an HTTPS domain and proxy WebSocket upgrades. Photos are never persisted on the server. Rooms are ephemeral and expire after one hour. A server restart removes rooms.
+Open the URL printed in the terminal (normally http://localhost:3000; if occupied, the next available port is used). For a self-hosted Node server: `npm run build` then `npm start`. For Vercel + Neon, follow the deployment section below; the shared database replaces the persistent Socket.IO service. The custom Node server remains available for local development and self-hosting. Deploy to a Node container or VM that supports persistent WebSockets. Do not deploy the server to a static host or a request-only serverless function. Set an HTTPS domain and proxy WebSocket upgrades. Photos are never persisted on the server. Rooms are ephemeral and expire after one hour. A server restart removes rooms.
 
 ## Personalize the gift
 
@@ -75,3 +75,20 @@ Face inference runs in a dedicated worker when OffscreenCanvas is supported. Fra
 
 Partners exchange bounded face anchors over the encrypted WebRTC data channel at up to 10 updates per second, avoiding a second detector for remote video. Host settings synchronize the effect, intensity, connection hearts, and selected pose. Still-photo metadata travels with each JPEG so both exports use the captured anchors. Photo previews are debounced, use blob URLs, and reuse decoded images. Static exports freeze animations at their initial phase.
 # test
+
+## Deploy on Vercel with Neon (recommended)
+
+The website and signaling API run together on Vercel; Neon stores ephemeral room state. You do **not** need a separate signaling domain or Neon Functions deployment. The client uses regular HTTPS requests to `/api/rooms`, polling for signaling events about once per second. Photos, live video, and tracking landmarks continue using encrypted peer-to-peer WebRTC. This adds up to roughly one polling interval to signaling delivery; countdowns include a 1.5-second scheduling allowance and are approximate, not frame-accurate.
+
+1. Set the Neon connection string as `DATABASE_URL` in your local `.env.local` and in **Vercel → Project → Settings → Environment Variables**. Keep it server-only; never name it `NEXT_PUBLIC_DATABASE_URL`. A password pasted into chat should be rotated before production.
+2. Run `npm run db:setup` locally to create the dedicated tables. This is idempotent and does not modify existing application tables. Alternatively run `migrations/001-neon-signaling.sql` in Neon's SQL editor.
+3. Remove `SIGNALING_SERVER_URL` if you previously configured an external service and want to use Neon. Redeploy the Vercel website after adding the environment variable.
+4. Visit `/api/signaling-config`: it should return `{"transport":"http","url":null}`. It never exposes the database URL or password. Open the website on two devices, create/join a room, and complete a shared shot.
+
+Rooms expire after one hour. Opaque per-member credentials are hashed in the database; the invitation only allows a second participant to claim the available guest place. Atomic conditional updates prevent simultaneous guests from taking that place. Events are bounded to the latest 400 entries, never contain photos, and expire with the room. Members send heartbeats while polling; a partner absent for a minute releases their guest place or ends a host-owned room. Expired rows are removed when a new room is created. If no more rooms are created, expired rows remain until the next cleanup; they are inaccessible after expiration. Rate limits constrain room creation and member writes.
+
+`npm run test:neon` runs opt-in integration tests against `DATABASE_URL` and deletes the test rooms it creates. `npm test` skips database integration tests unless explicitly enabled.
+
+## Optional persistent Socket.IO service
+
+For a continuously connected Socket.IO transport, the included `render.yaml` defines a single-instance Node service. Another Node host can run `npm ci --omit=dev` followed by `npm run start:signaling` on Node 22.18+. Set its `ALLOWED_ORIGINS` to exact website origins, comma-separated. Set the Vercel website's `SIGNALING_SERVER_URL` to the deployed HTTPS service origin and redeploy. An explicit service URL takes priority over the Neon-backed transport. Without either setting, local `npm run dev` / `npm start` use the original combined custom server. Do not horizontally scale the in-memory Socket.IO service without shared state. TURN configuration remains necessary for reliable camera connections across different networks with either transport.

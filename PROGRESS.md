@@ -12,4 +12,12 @@
 
 ## Release limits
 
-No hosting credentials or TURN service were supplied. This checkout is a runnable local Node application; production deployment and real two-device / physical printer checks are separate release gates. Frame decoration uses original typography and repeating ornaments rather than downloaded frame art. Birthday content is configurable. Custom collage provides a six-slot two-column layout with per-photo crop; it is not a freeform image-positioning canvas. Sticker size and rotation are controlled by touch-friendly sliders rather than pinch/rotate gestures. Local memory wall data is never synchronized between devices.
+A Neon database connection has been supplied for shared room signaling. Vercel deployment access and a TURN service have not been supplied. This checkout is a runnable local Node application; production deployment and real two-device / physical printer checks are separate release gates. Frame decoration uses original typography and repeating ornaments rather than downloaded frame art. Birthday content is configurable. Custom collage provides a six-slot two-column layout with per-photo crop; it is not a freeform image-positioning canvas. Sticker size and rotation are controlled by touch-friendly sliders rather than pinch/rotate gestures. Local memory wall data is never synchronized between devices.
+
+## Vercel + Neon signaling
+
+- Server-only DATABASE_URL configuration, ignored local credentials, and an idempotent schema setup script.
+- HTTPS room endpoints backed by shared PostgreSQL state; no separate signaling domain required.
+- Atomic two-participant admission, hashed member credentials, host-only settings/capture, expiring heartbeats, and bounded event history.
+- Existing WebRTC photos/video/face tracking stay peer-to-peer. Socket.IO remains an optional alternative.
+- Production deployment still requires adding DATABASE_URL in Vercel and redeploying; database setup does not update Vercel environment variables.

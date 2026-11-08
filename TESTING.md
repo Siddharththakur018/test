@@ -46,3 +46,11 @@ Before release, check with two real browsers/devices:
 - Profile camera-on interaction on an older iPhone: the editor should not rerender on every detection frame; inference must have at most one pending bitmap and preview composition must wait for rapid slider updates to settle.
 
 This implementation passed 18 automated tests and a production build. A local preview launch was declined during this change, so worker/browser rendering and physical iOS/two-device checks remain unverified.
+
+## Neon-backed signaling
+
+`npm run db:setup` creates only the dedicated `lovebooth_signaling_rooms` and `lovebooth_signaling_limits` tables and the expiry index. It is safe to rerun. `npm run test:neon` opts into live database tests using DATABASE_URL and removes its own test rooms. Ordinary test runs skip those integration tests.
+
+Coverage includes simultaneous guest admission, invalid member rejection, guest restrictions on settings, host-selected lens/pose delivery, equal capture timestamps for both clients, connection-offer exchange, guest departure/rejoin with no old-event replay, host room closure, abandoned guest release, and expiration. The HTTPS transport also has a mocked network test for create/poll/action/leave and keeping member credentials out of request URLs. Configuration tests check that database credentials never appear in the public signaling configuration.
+
+For deployment: add DATABASE_URL as a server-only Vercel environment variable and redeploy. If using Neon, remove any old SIGNALING_SERVER_URL override. Confirm `/api/signaling-config` reports `transport: http`. Check two devices on different networks, including phone Safari background/foreground behavior. Room polling adds roughly one second of signaling delay; capture scheduling includes a 1.5-second allowance but can still be late on poor networks. The expired database rows are inaccessible immediately and physically removed on the next room creation.
